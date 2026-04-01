@@ -1,6 +1,6 @@
 # Rotating 3D Globe (HTML/CSS/JS)
 
-Demo visual de un globo terráqueo wireframe en 3D, animado con `canvas` y JavaScript puro.
+Demo visual de un globo terráqueo wireframe en 3D, animado con `canvas` y JavaScript puro en CodeX.
 
 ## Características
 
