@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Globo 3D - Latitud y Longitud</title>
+    <style>
+      :root {
+        --bg-1: #030914;
+        --bg-2: #0a1b39;
+        --front: 120, 215, 255;
+        --back: 52, 105, 166;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background:
+          radial-gradient(120vmax 90vmax at 20% 15%, #173463 0%, transparent 55%),
+          radial-gradient(110vmax 80vmax at 75% 80%, #0b2245 0%, transparent 52%),
+          linear-gradient(160deg, var(--bg-2), var(--bg-1));
+      }
+
+      .scene {
+        width: min(64vmin, 540px);
+        aspect-ratio: 1;
+        filter: drop-shadow(0 0 28px rgba(94, 188, 255, 0.25));
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="scene">
+      <canvas id="globe" aria-label="Planeta 3D wireframe girando"></canvas>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("globe");
+      const ctx = canvas.getContext("2d");
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cssVars = getComputedStyle(document.documentElement);
+      const FRONT = cssVars.getPropertyValue("--front").trim();
+      const BACK = cssVars.getPropertyValue("--back").trim();
+
+      const state = { w: 0, h: 0, r: 0, spin: 0, tilt: -0.42, t: 0 };
+
+      function resize() {
+        const rect = canvas.getBoundingClientRect();
+        state.w = rect.width;
+        state.h = rect.height;
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        state.r = Math.min(state.w, state.h) * 0.30;
+      }
+
+      function rotX(p, a) {
+        const c = Math.cos(a), s = Math.sin(a);
+        return { x: p.x, y: p.y * c - p.z * s, z: p.y * s + p.z * c };
+      }
+
+      function rotY(p, a) {
+        const c = Math.cos(a), s = Math.sin(a);
+        return { x: p.x * c + p.z * s, y: p.y, z: -p.x * s + p.z * c };
+      }
+
+      function project(p) {
+        const focal = state.r * 4.6; // evita deformaciones tipo cilindro
+        const scale = focal / (focal + p.z);
+        return {
+          x: p.x * scale + state.w / 2,
+          y: p.y * scale + state.h / 2,
+          z: p.z,
+        };
+      }
+
+      function spherePoint(lat, lon) {
+        const cl = Math.cos(lat), sl = Math.sin(lat);
+        const co = Math.cos(lon), so = Math.sin(lon);
+        return { x: state.r * cl * co, y: state.r * sl, z: state.r * cl * so };
+      }
+
+      function drawSegments(points, frontPass) {
+        for (let i = 1; i < points.length; i++) {
+          const a = points[i - 1];
+          const b = points[i];
+          const zAvg = (a.z + b.z) * 0.5;
+          const isFront = zAvg < 0;
+          if (isFront !== frontPass) continue;
+
+          const depth = Math.min(Math.abs(zAvg) / state.r, 1);
+          const alpha = frontPass
+            ? 0.45 + depth * 0.45
+            : 0.08 + (1 - depth) * 0.18;
+
+          ctx.beginPath();
+          ctx.strokeStyle = frontPass
+            ? `rgba(${FRONT}, ${alpha.toFixed(3)})`
+            : `rgba(${BACK}, ${alpha.toFixed(3)})`;
+          ctx.lineWidth = frontPass ? 1.35 : 0.95;
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+
+      function buildCurveLat(latDeg, stepDeg = 4) {
+        const lat = (latDeg * Math.PI) / 180;
+        const pts = [];
+        for (let lon = 0; lon <= 360; lon += stepDeg) {
+          const p0 = spherePoint(lat, (lon * Math.PI) / 180);
+          const p1 = rotY(rotX(p0, state.tilt), state.spin);
+          pts.push(project(p1));
+        }
+        return pts;
+      }
+
+      function buildCurveLon(lonDeg, stepDeg = 3) {
+        const lon = (lonDeg * Math.PI) / 180;
+        const pts = [];
+        for (let lat = -90; lat <= 90; lat += stepDeg) {
+          const p0 = spherePoint((lat * Math.PI) / 180, lon);
+          const p1 = rotY(rotX(p0, state.tilt), state.spin);
+          pts.push(project(p1));
+        }
+        return pts;
+      }
+
+      function drawGlobe() {
+        ctx.clearRect(0, 0, state.w, state.h);
+
+        const cx = state.w / 2;
+        const cy = state.h / 2;
+
+        const fill = ctx.createRadialGradient(
+          cx - state.r * 0.35,
+          cy - state.r * 0.4,
+          state.r * 0.2,
+          cx,
+          cy,
+          state.r * 1.2
+        );
+        fill.addColorStop(0, "rgba(123, 201, 255, 0.24)");
+        fill.addColorStop(1, "rgba(10, 35, 74, 0.08)");
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, state.r, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, state.r, 0, Math.PI * 2);
+        ctx.clip();
+
+        const latitudes = [-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75];
+        const longitudes = Array.from({ length: 12 }, (_, i) => i * 15);
+
+        for (const lat of latitudes) {
+          const c = buildCurveLat(lat);
+          drawSegments(c, false);
+        }
+        for (const lon of longitudes) {
+          const c = buildCurveLon(lon);
+          drawSegments(c, false);
+        }
+
+        for (const lat of latitudes) {
+          const c = buildCurveLat(lat);
+          drawSegments(c, true);
+        }
+        for (const lon of longitudes) {
+          const c = buildCurveLon(lon);
+          drawSegments(c, true);
+        }
+
+        ctx.restore();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, state.r, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(118, 197, 255, 0.45)";
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+      }
+
+      function animate(ts) {
+        const now = ts * 0.001;
+        const dt = Math.min(now - state.t, 0.04);
+        state.t = now;
+
+        state.spin += dt * 0.58;
+        state.tilt = -0.42 + Math.sin(now * 0.22) * 0.02;
+
+        drawGlobe();
+        requestAnimationFrame(animate);
+      }
+
+      window.addEventListener("resize", resize);
+      resize();
+      requestAnimationFrame(animate);
+    </script>
+  </body>
+</html>
